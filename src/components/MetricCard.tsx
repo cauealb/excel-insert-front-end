@@ -7,7 +7,7 @@ interface MetricCardProps {
 
 export default function MetricCard({ icon, label, value, meta}: MetricCardProps)  {
     return (
-        <div className="metric-card">
+        <div className="metric-card card-hover">
             <div className="metric-icon">{icon}</div>
             <span>{label}</span>
             <strong>{value}</strong>

@@ -1,10 +1,7 @@
 import {
   ArrowRight,
   Braces,
-  CheckCircle2,
-  Clipboard,
   Database,
-  Download,
   FileSpreadsheet,
   Loader2,
   RefreshCw,
@@ -278,7 +275,6 @@ function App() {
     },
   ];
 
-  console.log(isGenerating, 'main')
   return (
     <main className="app-shell">
       <Sidebar steps={steps} usingFallbackCatalog />

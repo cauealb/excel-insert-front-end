@@ -6,7 +6,7 @@ interface ApiCardProps {
 
 export default function ApiCard({ usingFallbackCatalog }: ApiCardProps) {
     return (
-        <div className="api-card">
+        <div className="api-card card-hover">
             <span className="api-label">API</span>
             <strong>{getApiBaseUrl()}</strong>
             <span
