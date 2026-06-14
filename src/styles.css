@@ -790,10 +790,12 @@ select:disabled {
 }
 
 .card-hover {
-  cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
 
-  &:hover {
-    transform: translateY(-3px);
-  }
+.card-hover:hover {
+  transform: translateY(-3px);
 }

@@ -3,16 +3,19 @@ import { Database, Loader2 } from "lucide-react";
 interface ActionButtonProps {
   canGenerate: boolean;
   isGenerating: boolean;
-  handleGenerateSql: () => void
-} 
+  onGenerateSql: () => void;
+}
 
-export default function ActionButton({ canGenerate, isGenerating, handleGenerateSql }: ActionButtonProps) {
-    console.log(isGenerating, 'componente')
+export default function ActionButton({
+  canGenerate,
+  isGenerating,
+  onGenerateSql,
+}: ActionButtonProps) {
   return (
     <button
       className="primary-button"
       type="button"
-      onClick={handleGenerateSql}
+      onClick={onGenerateSql}
       disabled={!canGenerate || isGenerating}
     >
       {isGenerating ? (
