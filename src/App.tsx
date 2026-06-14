@@ -38,6 +38,7 @@ import {
 } from "./utils";
 import Sidebar from "./components/Sidebar";
 import MetricCard from "./components/MetricCard";
+import StatusPanel from "./components/StatusPanel";
 
 type StepStatus = "ready" | "active" | "done";
 
@@ -530,32 +531,6 @@ function App() {
         </section>
       </section>
     </main>
-  );
-}
-
-function StatusPanel({
-  catalogMessage,
-  apiError,
-}: {
-  catalogMessage: string;
-  apiError: ApiErrorShape | null;
-}) {
-  const details = apiError?.details;
-
-  return (
-    <section className={`status-panel ${apiError ? "error" : "notice"}`}>
-      <AlertTriangle size={20} />
-      <div>
-        <strong>{apiError?.message || catalogMessage}</strong>
-        {details && (
-          <span>
-            Linha {details.line || "-"}, coluna {details.column || "-"}
-            {details.field ? `, campo ${details.field}` : ""}
-            {details.reason ? `: ${details.reason}` : ""}
-          </span>
-        )}
-      </div>
-    </section>
   );
 }
 
