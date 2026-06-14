@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   ArrowRight,
   Braces,
   CheckCircle2,
@@ -18,7 +17,6 @@ import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "re
 import {
   ApiError,
   generateSql,
-  getApiBaseUrl,
   getCatalog,
   getSheetDetails,
   uploadWorkbook,
@@ -39,6 +37,7 @@ import {
 import Sidebar from "./components/Sidebar";
 import MetricCard from "./components/MetricCard";
 import StatusPanel from "./components/StatusPanel";
+import ActionButton from "./components/ActionButton";
 
 type StepStatus = "ready" | "active" | "done";
 
@@ -278,6 +277,7 @@ function App() {
     },
   ];
 
+  console.log(isGenerating, 'main')
   return (
     <main className="app-shell">
       <Sidebar steps={steps} usingFallbackCatalog />
@@ -471,15 +471,11 @@ function App() {
             )}
 
             <div className="action-row">
-              <button
-                className="primary-button"
-                type="button"
-                onClick={handleGenerateSql}
-                disabled={!canGenerate || isGenerating}
-              >
-                {isGenerating ? <Loader2 className="spin" size={18} /> : <Database size={18} />}
-                Gerar SQL
-              </button>
+              <ActionButton 
+                canGenerate={canGenerate}
+                isGenerating={isGenerating}
+                handleGenerateSql={handleGenerateSql}
+              />
             </div>
           </section>
         </div>
