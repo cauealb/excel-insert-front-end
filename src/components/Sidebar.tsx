@@ -1,5 +1,6 @@
 import { FileSpreadsheet } from "lucide-react";
 import { getApiBaseUrl } from "../api";
+import ApiCard from "./ApiCard";
 
 interface StepsSideBarProps {
     label: string
@@ -34,17 +35,9 @@ export default function Sidebar({ steps, usingFallbackCatalog }: SidebarProps) {
           ))}
         </nav>
 
-        <div className="api-card">
-          <span className="api-label">API</span>
-          <strong>{getApiBaseUrl()}</strong>
-          <span
-            className={
-              usingFallbackCatalog ? "status-dot warning" : "status-dot ok"
-            }
-          >
-            {usingFallbackCatalog ? "Catalogo local" : "Conectada"}
-          </span>
-        </div>
+        <ApiCard 
+          usingFallbackCatalog={usingFallbackCatalog}
+        />
       </aside>
     </>
   );
