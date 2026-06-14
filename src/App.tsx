@@ -37,6 +37,7 @@ import {
   getRequiredMissing,
 } from "./utils";
 import Sidebar from "./components/Sidebar";
+import MetricCard from "./components/MetricCard";
 
 type StepStatus = "ready" | "active" | "done";
 
@@ -529,27 +530,6 @@ function App() {
         </section>
       </section>
     </main>
-  );
-}
-
-function MetricCard({
-  icon,
-  label,
-  value,
-  meta,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  meta: string;
-}) {
-  return (
-    <div className="metric-card">
-      <div className="metric-icon">{icon}</div>
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <small>{meta}</small>
-    </div>
   );
 }
 
