@@ -38,6 +38,7 @@ import Sidebar from "./components/Sidebar";
 import MetricCard from "./components/MetricCard";
 import StatusPanel from "./components/StatusPanel";
 import ActionButton from "./components/ActionButton";
+import ResponseSQLScript from "./components/ResponseSQLScript";
 
 type StepStatus = "ready" | "active" | "done";
 
@@ -480,51 +481,12 @@ function App() {
           </section>
         </div>
 
-        <section className="panel sql-panel">
-          <div className="panel-heading inline">
-            <div>
-              <span className="panel-kicker">Saída</span>
-              <h2>Script SQL</h2>
-            </div>
-            <div className="button-group">
-              <button
-                className="icon-text-button"
-                type="button"
-                onClick={handleCopySql}
-                disabled={!sqlResult?.sql}
-              >
-                {copied ? <CheckCircle2 size={16} /> : <Clipboard size={16} />}
-                {copied ? "Copiado" : "Copiar"}
-              </button>
-              <button
-                className="icon-text-button"
-                type="button"
-                onClick={handleDownloadSql}
-                disabled={!sqlResult?.sql}
-              >
-                <Download size={16} />
-                Baixar
-              </button>
-            </div>
-          </div>
-
-          {sqlResult ? (
-            <>
-              <div className="summary-strip">
-                <span>{sqlResult.summary.table}</span>
-                <span>{sqlResult.summary.sheetName}</span>
-                <span>{sqlResult.summary.insertedRows} linhas</span>
-                <span>{sqlResult.summary.columns.length} colunas</span>
-              </div>
-              <pre className="sql-output">{sqlResult.sql}</pre>
-            </>
-          ) : (
-            <div className="empty-state horizontal">
-              <Braces size={24} />
-              <span>SQL aguardando geração</span>
-            </div>
-          )}
-        </section>
+        <ResponseSQLScript 
+          handleCopySql={handleCopySql}
+          handleDownloadSql={handleDownloadSql}
+          sqlResult={sqlResult}
+          copied={copied}
+        />
       </section>
     </main>
   );
