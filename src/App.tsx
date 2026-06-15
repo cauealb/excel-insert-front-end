@@ -7,10 +7,16 @@ import {
   getSheetDetails,
   uploadWorkbook,
 } from "./api";
+import {
+  createHistoryId,
+  loadImportHistory,
+  saveImportHistory,
+} from "./historyStorage";
 import type {
   ApiErrorShape,
   CatalogEntity,
   GenerateSqlResult,
+  ImportHistoryItem,
   UploadResult,
 } from "./types";
 import {
@@ -19,13 +25,17 @@ import {
   downloadTextFile,
   getRequiredMissing,
 } from "./utils";
+import ImportHistory from "./components/ImportHistory";
 import MetricCard from "./components/MetricCard";
 import RequestExcel from "./components/RequestExcel";
 import ResponseSQLScript from "./components/ResponseSQLScript";
 import Sidebar from "./components/Sidebar";
 import StatusPanel from "./components/StatusPanel";
+import ThemeToggle from "./components/ThemeToggle";
 
 type StepStatus = "ready" | "active" | "done";
+type Theme = "light" | "dark";
+type ActiveView = "import" | "history";
 
 function App() {
   const [catalog, setCatalog] = useState<CatalogEntity[]>([]);
@@ -39,11 +49,25 @@ function App() {
   const [headers, setHeaders] = useState<string[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [sqlResult, setSqlResult] = useState<GenerateSqlResult | null>(null);
+  const [historyItems, setHistoryItems] = useState<ImportHistoryItem[]>(() =>
+    loadImportHistory(),
+  );
+  const [activeView, setActiveView] = useState<ActiveView>("import");
   const [apiError, setApiError] = useState<ApiErrorShape | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoadingSheet, setIsLoadingSheet] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [theme, setTheme] = useState<Theme>(() => {
+    const savedTheme = localStorage.getItem("excel-insert-theme");
+    if (savedTheme === "dark" || savedTheme === "light") {
+      return savedTheme;
+    }
+
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  });
 
   const selectedEntity =
     catalog.find((entity) => entity.name === selectedEntityName) || catalog[0];
@@ -72,6 +96,11 @@ function App() {
       setSelectedEntityName(catalog[0].name);
     }
   }, [catalog, selectedEntity]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("excel-insert-theme", theme);
+  }, [theme]);
 
   async function loadCatalog() {
     setCatalogLoading(true);
@@ -149,6 +178,10 @@ function App() {
     }
   }
 
+  function toggleTheme() {
+    setTheme((currentTheme) => (currentTheme === "light" ? "dark" : "light"));
+  }
+
   function handleEntityChange(entityName: string) {
     const entity = catalog.find((item) => item.name === entityName);
     setSelectedEntityName(entityName);
@@ -193,6 +226,7 @@ function App() {
         mapping,
       });
       setSqlResult(result);
+      addHistoryItem(result);
     } catch (error) {
       setApiError(toApiErrorShape(error, "Nao foi possivel gerar o SQL."));
     } finally {
@@ -225,6 +259,57 @@ function App() {
     );
   }
 
+  async function handleCopyHistorySql(sql: string) {
+    await copyToClipboard(sql);
+  }
+
+  function handleDownloadHistorySql(item: ImportHistoryItem) {
+    const safeSheet = item.sheetName
+      .replace(/[^\w-]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .toLowerCase();
+    downloadTextFile(`${item.entity}-${safeSheet || "script"}.sql`, item.sql);
+  }
+
+  function handleDeleteHistoryItem(id: string) {
+    setHistoryItems((currentItems) => {
+      const nextItems = currentItems.filter((item) => item.id !== id);
+      saveImportHistory(nextItems);
+      return nextItems;
+    });
+  }
+
+  function handleClearHistory() {
+    setHistoryItems([]);
+    saveImportHistory([]);
+  }
+
+  function addHistoryItem(result: GenerateSqlResult) {
+    if (!selectedEntity) {
+      return;
+    }
+
+    const nextItem: ImportHistoryItem = {
+      id: createHistoryId(),
+      createdAt: new Date().toISOString(),
+      fileName: selectedFile?.name || "planilha.xlsx",
+      entity: selectedEntity.name,
+      entityLabel: selectedEntity.label,
+      table: result.summary.table,
+      sheetName: result.summary.sheetName,
+      insertedRows: result.summary.insertedRows,
+      columns: result.summary.columns,
+      mapping,
+      sql: result.sql,
+    };
+
+    setHistoryItems((currentItems) => {
+      const nextItems = [nextItem, ...currentItems].slice(0, 50);
+      saveImportHistory(nextItems);
+      return nextItems;
+    });
+  }
+
   const steps: Array<{ label: string; status: StepStatus }> = [
     {
       label: "Catalogo",
@@ -251,90 +336,118 @@ function App() {
 
   return (
     <main className="app-shell">
-      <Sidebar steps={steps} usingFallbackCatalog={usingFallbackCatalog} />
+      <Sidebar
+        steps={steps}
+        usingFallbackCatalog={usingFallbackCatalog}
+        activeView={activeView}
+        historyCount={historyItems.length}
+        onOpenImport={() => setActiveView("import")}
+        onOpenHistory={() => setActiveView("history")}
+      />
 
       <section className="workspace">
         <header className="topbar">
           <div>
-            <span className="eyebrow">Gerador revisavel</span>
-            <h1>Excel para SQL com validacao de catalogo</h1>
+            <span className="eyebrow">
+              {activeView === "history" ? "Auditoria local" : "Gerador revisavel"}
+            </span>
+            <h1>
+              {activeView === "history"
+                ? "Historico de importacoes"
+                : "Excel para SQL com validacao de catalogo"}
+            </h1>
           </div>
-          <button
-            className="icon-button"
-            type="button"
-            onClick={loadCatalog}
-            aria-label="Atualizar catalogo"
-            title="Atualizar catalogo"
-          >
-            {catalogLoading ? (
-              <Loader2 className="spin" size={18} />
-            ) : (
-              <RefreshCw size={18} />
-            )}
-          </button>
+          <div className="topbar-actions">
+            <ThemeToggle theme={theme} onToggle={toggleTheme} />
+            <button
+              className="icon-button"
+              type="button"
+              onClick={loadCatalog}
+              aria-label="Atualizar catalogo"
+              title="Atualizar catalogo"
+            >
+              {catalogLoading ? (
+                <Loader2 className="spin" size={18} />
+              ) : (
+                <RefreshCw size={18} />
+              )}
+            </button>
+          </div>
         </header>
 
-        <section className="metrics-grid" aria-label="Resumo">
-          <MetricCard
-            icon={<Database size={20} />}
-            label="Entidade"
-            value={selectedEntity?.label || "Catalogo"}
-            meta={selectedEntity?.table || "Aguardando"}
-          />
-          <MetricCard
-            icon={<Table2 size={20} />}
-            label="Aba"
-            value={selectedSheetName || "Nenhuma"}
-            meta={`${headers.length} colunas`}
-          />
-          <MetricCard
-            icon={<Settings2 size={20} />}
-            label="Mapeados"
-            value={`${mappedFieldsCount}/${selectedEntity?.fields.length || 0}`}
-            meta={`${requiredMissing.length} obrigatorios pendentes`}
-          />
-          <MetricCard
-            icon={<Braces size={20} />}
-            label="SQL"
-            value={sqlResult ? `${sqlResult.summary.insertedRows}` : "0"}
-            meta="linhas prontas"
-          />
-        </section>
+        {activeView === "import" ? (
+          <>
+            <section className="metrics-grid" aria-label="Resumo">
+              <MetricCard
+                icon={<Database size={20} />}
+                label="Entidade"
+                value={selectedEntity?.label || "Catalogo"}
+                meta={selectedEntity?.table || "Aguardando"}
+              />
+              <MetricCard
+                icon={<Table2 size={20} />}
+                label="Aba"
+                value={selectedSheetName || "Nenhuma"}
+                meta={`${headers.length} colunas`}
+              />
+              <MetricCard
+                icon={<Settings2 size={20} />}
+                label="Mapeados"
+                value={`${mappedFieldsCount}/${selectedEntity?.fields.length || 0}`}
+                meta={`${requiredMissing.length} obrigatorios pendentes`}
+              />
+              <MetricCard
+                icon={<Braces size={20} />}
+                label="SQL"
+                value={sqlResult ? `${sqlResult.summary.insertedRows}` : "0"}
+                meta="linhas prontas"
+              />
+            </section>
 
-        {(catalogError || apiError) && (
-          <StatusPanel catalogMessage={catalogError} apiError={apiError} />
+            {(catalogError || apiError) && (
+              <StatusPanel catalogMessage={catalogError} apiError={apiError} />
+            )}
+
+            <div className="main-grid">
+              <RequestExcel
+                selectedEntityName={selectedEntityName}
+                selectedEntity={selectedEntity}
+                selectedFile={selectedFile}
+                catalog={catalog}
+                catalogLoading={catalogLoading}
+                uploadResult={uploadResult}
+                selectedSheetName={selectedSheetName}
+                headers={headers}
+                mapping={mapping}
+                canGenerate={canGenerate}
+                isUploading={isUploading}
+                isLoadingSheet={isLoadingSheet}
+                isGenerating={isGenerating}
+                onEntityChange={handleEntityChange}
+                onFileSelected={handleFile}
+                onSheetSelect={selectSheet}
+                onAutoMap={applyAutoMapping}
+                onMappingChange={handleMappingChange}
+                onGenerateSql={handleGenerateSql}
+              />
+            </div>
+
+            <ResponseSQLScript
+              handleCopySql={handleCopySql}
+              handleDownloadSql={handleDownloadSql}
+              sqlResult={sqlResult}
+              copied={copied}
+            />
+          </>
+        ) : (
+          <ImportHistory
+            items={historyItems}
+            onCopySql={handleCopyHistorySql}
+            onDownloadSql={handleDownloadHistorySql}
+            onDeleteItem={handleDeleteHistoryItem}
+            onClearHistory={handleClearHistory}
+          />
         )}
-
-        <div className="main-grid">
-          <RequestExcel
-            selectedEntityName={selectedEntityName}
-            selectedEntity={selectedEntity}
-            selectedFile={selectedFile}
-            catalog={catalog}
-            catalogLoading={catalogLoading}
-            uploadResult={uploadResult}
-            selectedSheetName={selectedSheetName}
-            headers={headers}
-            mapping={mapping}
-            canGenerate={canGenerate}
-            isUploading={isUploading}
-            isLoadingSheet={isLoadingSheet}
-            isGenerating={isGenerating}
-            onEntityChange={handleEntityChange}
-            onFileSelected={handleFile}
-            onSheetSelect={selectSheet}
-            onAutoMap={applyAutoMapping}
-            onMappingChange={handleMappingChange}
-            onGenerateSql={handleGenerateSql}
-          />
-        </div>
-
-        <ResponseSQLScript
-          handleCopySql={handleCopySql}
-          handleDownloadSql={handleDownloadSql}
-          sqlResult={sqlResult}
-          copied={copied}
-        />
       </section>
     </main>
   );

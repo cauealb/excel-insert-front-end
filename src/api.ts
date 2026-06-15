@@ -406,8 +406,39 @@ function normalizeHeaders(headers: unknown): string[] {
   }
 
   return headers
-    .map((header) => String(header || "").trim())
+    .map((header) => normalizeHeaderName(header))
     .filter((header) => header.length > 0);
+}
+
+function normalizeHeaderName(header: unknown): string {
+  if (typeof header === "string" || typeof header === "number") {
+    return String(header).trim();
+  }
+
+  if (!isRecord(header)) {
+    return "";
+  }
+
+  const candidateKeys = [
+    "name",
+    "header",
+    "label",
+    "value",
+    "title",
+    "text",
+    "key",
+    "columnName",
+    "column_name",
+  ];
+
+  for (const key of candidateKeys) {
+    const value = header[key];
+    if (typeof value === "string" || typeof value === "number") {
+      return String(value).trim();
+    }
+  }
+
+  return "";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

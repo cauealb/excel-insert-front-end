@@ -66,3 +66,17 @@ export interface ApiErrorShape {
   message: string;
   details?: ApiErrorDetails;
 }
+
+export interface ImportHistoryItem {
+  id: string;
+  createdAt: string;
+  fileName: string;
+  entity: string;
+  entityLabel: string;
+  table: string;
+  sheetName: string;
+  insertedRows: number;
+  columns: string[];
+  mapping: Record<string, string>;
+  sql: string;
+}
