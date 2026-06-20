@@ -6,16 +6,16 @@ import {
   Sparkles,
   UploadCloud,
 } from "lucide-react";
-import type { CatalogEntity, UploadResult } from "../types";
+import type { ConfiguredTable, UploadResult } from "../types";
 import { formatFileSize } from "../utils";
 import ActionButton from "./ActionButton";
 
 interface RequestExcelProps {
-  selectedEntityName: string;
-  selectedEntity: CatalogEntity | undefined;
+  tables: ConfiguredTable[];
+  selectedTableId: string;
+  selectedTable: ConfiguredTable;
+  tableIssue: string;
   selectedFile: File | null;
-  catalogLoading: boolean;
-  catalog: CatalogEntity[];
   uploadResult: UploadResult | null;
   selectedSheetName: string;
   headers: string[];
@@ -24,7 +24,7 @@ interface RequestExcelProps {
   isUploading: boolean;
   isLoadingSheet: boolean;
   isGenerating: boolean;
-  onEntityChange: (entityName: string) => void;
+  onConfiguredTableChange: (tableId: string) => void;
   onFileSelected: (file: File) => void;
   onSheetSelect: (
     workbookId: string,
@@ -37,11 +37,11 @@ interface RequestExcelProps {
 }
 
 export default function RequestExcel({
-  selectedEntityName,
-  selectedEntity,
+  tables,
+  selectedTableId,
+  selectedTable,
+  tableIssue,
   selectedFile,
-  catalog,
-  catalogLoading,
   uploadResult,
   selectedSheetName,
   headers,
@@ -50,7 +50,7 @@ export default function RequestExcel({
   isUploading,
   isLoadingSheet,
   isGenerating,
-  onEntityChange,
+  onConfiguredTableChange,
   onFileSelected,
   onSheetSelect,
   onAutoMap,
@@ -83,26 +83,34 @@ export default function RequestExcel({
         <div className="panel-heading">
           <div>
             <span className="panel-kicker">Entrada</span>
-            <h2>Planilha e entidade</h2>
+            <h2>Planilha</h2>
           </div>
         </div>
 
-        <label className="field-label" htmlFor="entity">
-          Entidade
+        <label className="field-label" htmlFor="configured-table">
+          Tabela configurada
         </label>
         <select
-          id="entity"
+          id="configured-table"
           className="select"
-          value={selectedEntityName}
-          onChange={(event) => onEntityChange(event.target.value)}
-          disabled={catalogLoading || catalog.length === 0}
+          value={selectedTableId}
+          onChange={(event) => onConfiguredTableChange(event.target.value)}
         >
-          {catalog.map((entity) => (
-            <option value={entity.name} key={entity.name}>
-              {entity.label} ({entity.name})
+          {tables.map((table) => (
+            <option value={table.id} key={table.id}>
+              {table.name || "Sem nome"} ({table.columns.length} colunas)
             </option>
           ))}
         </select>
+
+        {tableIssue ? (
+          <div className="inline-error">{tableIssue}</div>
+        ) : (
+          <div className="selection-summary">
+            <strong>{selectedTable.name}</strong>
+            <span>{selectedTable.columns.length} colunas prontas</span>
+          </div>
+        )}
 
         <input
           ref={fileInputRef}
@@ -164,13 +172,13 @@ export default function RequestExcel({
         <div className="panel-heading inline">
           <div>
             <span className="panel-kicker">Mapeamento</span>
-            <h2>Campos permitidos</h2>
+            <h2>Colunas do Excel</h2>
           </div>
           <button
             className="secondary-button"
             type="button"
             onClick={onAutoMap}
-            disabled={!headers.length || !selectedEntity}
+            disabled={!headers.length || Boolean(tableIssue)}
           >
             <Sparkles size={16} />
             Auto
@@ -182,40 +190,55 @@ export default function RequestExcel({
             <Loader2 className="spin" size={24} />
             <span>Carregando aba</span>
           </div>
-        ) : selectedEntity && headers.length ? (
+        ) : !tableIssue && headers.length ? (
           <div className="mapping-table" role="table" aria-label="Campos e colunas">
             <div className="mapping-row header" role="row">
-              <span>Campo API</span>
+              <span>Coluna SQL</span>
               <span>Tipo</span>
               <span>Coluna Excel</span>
             </div>
-            {selectedEntity.fields.map((field) => (
-              <div className="mapping-row" role="row" key={field.name}>
-                <div className="field-name">
-                  <strong>{field.label}</strong>
-                  <span>
-                    {field.name}
-                    {field.required ? " - obrigatorio" : ""}
-                    {field.unique ? " - unico" : ""}
-                  </span>
-                </div>
-                <span className="type-pill">{field.type}</span>
-                <select
-                  className="select compact"
-                  value={mapping[field.name] || ""}
-                  onChange={(event) =>
-                    onMappingChange(field.name, event.target.value)
-                  }
-                >
-                  <option value="">Ignorar</option>
-                  {headers.map((header) => (
-                    <option value={header} key={header}>
-                      {header}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ))}
+            {selectedTable.columns
+              .filter((column) => column.name.trim())
+              .map((column) => {
+                const usedHeaders = new Set(
+                  Object.entries(mapping)
+                    .filter(([fieldName]) => fieldName !== column.name)
+                    .map(([, header]) => header)
+                    .filter(Boolean),
+                );
+
+                return (
+                  <div className="mapping-row" role="row" key={column.id}>
+                    <div className="field-name">
+                      <strong>{column.label || column.name}</strong>
+                      <span>
+                        {column.name}
+                        {column.required ? " - obrigatório" : ""}
+                        {column.unique ? " - único" : ""}
+                      </span>
+                    </div>
+                    <span className="type-pill">{column.type}</span>
+                    <select
+                      className="select compact"
+                      value={mapping[column.name] || ""}
+                      onChange={(event) =>
+                        onMappingChange(column.name, event.target.value)
+                      }
+                    >
+                      <option value="">Ignorar</option>
+                      {headers.map((header) => (
+                        <option
+                          value={header}
+                          key={header}
+                          disabled={usedHeaders.has(header)}
+                        >
+                          {header}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
           </div>
         ) : (
           <div className="empty-state">

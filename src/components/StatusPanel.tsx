@@ -18,6 +18,7 @@ export default function StatusPanel({catalogMessage, apiError}: StatusPanelProps
           <span>
             Linha {details.line || "-"}, coluna {details.column || "-"}
             {details.field ? `, campo ${details.field}` : ""}
+            {details.value ? `, valor ${details.value}` : ""}
             {details.reason ? `: ${details.reason}` : ""}
           </span>
         )}

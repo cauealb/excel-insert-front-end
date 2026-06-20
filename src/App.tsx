@@ -12,11 +12,17 @@ import {
   loadImportHistory,
   saveImportHistory,
 } from "./historyStorage";
+import { loadConfiguredTables, saveConfiguredTables } from "./tableStorage";
 import type {
   ApiErrorShape,
   CatalogEntity,
+  ConfiguredTable,
+  FieldType,
   GenerateSqlResult,
+  GenerateTableColumn,
   ImportHistoryItem,
+  TableColumnConfig,
+  TableConfig,
   UploadResult,
 } from "./types";
 import {
@@ -31,18 +37,25 @@ import RequestExcel from "./components/RequestExcel";
 import ResponseSQLScript from "./components/ResponseSQLScript";
 import Sidebar from "./components/Sidebar";
 import StatusPanel from "./components/StatusPanel";
+import TableConfigPanel from "./components/TableConfigPanel";
 import ThemeToggle from "./components/ThemeToggle";
 
-type StepStatus = "ready" | "active" | "done";
 type Theme = "light" | "dark";
-type ActiveView = "import" | "history";
+type ActiveView = "import" | "tables" | "history";
 
 function App() {
   const [catalog, setCatalog] = useState<CatalogEntity[]>([]);
+  const [fieldTypes, setFieldTypes] = useState<FieldType[]>([]);
   const [usingFallbackCatalog, setUsingFallbackCatalog] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState("");
-  const [selectedEntityName, setSelectedEntityName] = useState("users");
+  const [tables, setTables] = useState<ConfiguredTable[]>(() => {
+    const savedTables = loadConfiguredTables();
+    return savedTables.length
+      ? savedTables
+      : [createConfiguredTable(createDefaultTableConfig())];
+  });
+  const [selectedTableId, setSelectedTableId] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [selectedSheetName, setSelectedSheetName] = useState("");
@@ -58,6 +71,8 @@ function App() {
   const [isLoadingSheet, setIsLoadingSheet] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [tablesSaved, setTablesSaved] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => {
     const savedTheme = localStorage.getItem("excel-insert-theme");
     if (savedTheme === "dark" || savedTheme === "light") {
@@ -69,20 +84,25 @@ function App() {
       : "light";
   });
 
-  const selectedEntity =
-    catalog.find((entity) => entity.name === selectedEntityName) || catalog[0];
+  const selectedTable =
+    tables.find((table) => table.id === selectedTableId) ||
+    tables[0] ||
+    createConfiguredTable(createDefaultTableConfig());
 
   const requiredMissing = useMemo(
-    () => getRequiredMissing(selectedEntity?.fields || [], mapping),
-    [mapping, selectedEntity],
+    () => getRequiredMissing(selectedTable.columns, mapping),
+    [mapping, selectedTable.columns],
   );
 
-  const mappedFieldsCount = Object.values(mapping).filter(Boolean).length;
+  const tableIssue = useMemo(() => getTableConfigIssue(selectedTable), [selectedTable]);
+  const mappedFieldsCount = selectedTable.columns.filter(
+    (column) => column.name.trim() && mapping[column.name],
+  ).length;
   const canGenerate = Boolean(
     uploadResult &&
       selectedSheetName &&
-      selectedEntity &&
       headers.length &&
+      !tableIssue &&
       requiredMissing.length === 0 &&
       mappedFieldsCount > 0,
   );
@@ -92,10 +112,14 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!selectedEntity && catalog[0]) {
-      setSelectedEntityName(catalog[0].name);
+    if (!selectedTableId || !tables.some((table) => table.id === selectedTableId)) {
+      setSelectedTableId(tables[0]?.id || "");
     }
-  }, [catalog, selectedEntity]);
+  }, [selectedTableId, tables]);
+
+  useEffect(() => {
+    saveConfiguredTables(tables);
+  }, [tables]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -108,10 +132,11 @@ function App() {
 
     const result = await getCatalog();
     setCatalog(result.entities);
+    setFieldTypes(result.fieldTypes);
     setUsingFallbackCatalog(result.usingFallback);
     setCatalogError(
       result.usingFallback
-        ? "Catalogo local em uso. Conecte a API para sincronizar entidades."
+        ? "Catálogo local em uso. Conecte a API para sincronizar entidades."
         : "",
     );
     setCatalogLoading(false);
@@ -161,7 +186,12 @@ function App() {
 
     if (existingHeaders?.length) {
       setHeaders(existingHeaders);
-      setMapping(buildAutoMapping(selectedEntity?.fields || [], existingHeaders));
+      setMapping(
+        makeUniqueMapping(
+          buildAutoMapping(selectedTable.columns, existingHeaders),
+          selectedTable.columns,
+        ),
+      );
       return;
     }
 
@@ -170,7 +200,12 @@ function App() {
     try {
       const details = await getSheetDetails(workbookId, sheetName);
       setHeaders(details.headers);
-      setMapping(buildAutoMapping(selectedEntity?.fields || [], details.headers));
+      setMapping(
+        makeUniqueMapping(
+          buildAutoMapping(selectedTable.columns, details.headers),
+          selectedTable.columns,
+        ),
+      );
     } catch (error) {
       setApiError(toApiErrorShape(error, "Nao foi possivel carregar a aba."));
     } finally {
@@ -182,18 +217,188 @@ function App() {
     setTheme((currentTheme) => (currentTheme === "light" ? "dark" : "light"));
   }
 
-  function handleEntityChange(entityName: string) {
-    const entity = catalog.find((item) => item.name === entityName);
-    setSelectedEntityName(entityName);
-    setMapping(buildAutoMapping(entity?.fields || [], headers));
+  function updateSelectedTable(
+    updater: (current: ConfiguredTable) => ConfiguredTable,
+  ) {
+    setTables((currentTables) =>
+      currentTables.map((table) =>
+        table.id === selectedTable.id ? updater(table) : table,
+      ),
+    );
+  }
+
+  function handleSelectTable(tableId: string) {
+    const nextTable = tables.find((table) => table.id === tableId);
+    if (!nextTable) {
+      return;
+    }
+
+    setSelectedTableId(tableId);
+    setMapping(
+      makeUniqueMapping(
+        buildAutoMapping(nextTable.columns, headers),
+        nextTable.columns,
+      ),
+    );
     setSqlResult(null);
     setApiError(null);
+  }
+
+  function handleAddTable() {
+    const nextTable = createConfiguredTable(createBlankTableConfig());
+    setTables((currentTables) => [...currentTables, nextTable]);
+    setSelectedTableId(nextTable.id);
+    setMapping({});
+    setSqlResult(null);
+    setApiError(null);
+  }
+
+  function handleRemoveTable(tableId: string) {
+    if (tables.length <= 1) {
+      return;
+    }
+
+    const nextTables = tables.filter((table) => table.id !== tableId);
+    setTables(nextTables);
+    if (selectedTableId === tableId) {
+      const nextSelectedTable = nextTables[0];
+      setSelectedTableId(nextSelectedTable.id);
+      setMapping(
+        makeUniqueMapping(
+          buildAutoMapping(nextSelectedTable.columns, headers),
+          nextSelectedTable.columns,
+        ),
+      );
+    }
+    setSqlResult(null);
+    setApiError(null);
+  }
+
+  function handleSaveTables() {
+    saveConfiguredTables(tables);
+    setTablesSaved(true);
+    window.setTimeout(() => setTablesSaved(false), 1600);
+  }
+
+  function handleConfiguredTableChange(tableId: string) {
+    const nextTable = tables.find((table) => table.id === tableId);
+    if (!nextTable) {
+      return;
+    }
+
+    setSelectedTableId(tableId);
+    setMapping(
+      makeUniqueMapping(
+        buildAutoMapping(nextTable.columns, headers),
+        nextTable.columns,
+      ),
+    );
+    setSqlResult(null);
+    setApiError(null);
+  }
+
+  function handleApplyTemplate(entityName: string) {
+    const entity = catalog.find((item) => item.name === entityName);
+    if (!entityName) {
+      updateSelectedTable((current) => ({ ...current, templateName: undefined }));
+      setSqlResult(null);
+      setApiError(null);
+      return;
+    }
+
+    if (!entity) {
+      return;
+    }
+
+    const nextTableConfig = createTableConfigFromEntity(entity);
+    updateSelectedTable((current) => ({
+      ...nextTableConfig,
+      id: current.id,
+      templateName: entity.name,
+    }));
+    setMapping(
+      makeUniqueMapping(
+        buildAutoMapping(nextTableConfig.columns, headers),
+        nextTableConfig.columns,
+      ),
+    );
+    setSqlResult(null);
+    setApiError(null);
+  }
+
+  function handleTableNameChange(name: string) {
+    updateSelectedTable((current) => ({ ...current, name, templateName: undefined }));
+    setSqlResult(null);
+    setApiError(null);
+  }
+
+  function handleColumnChange(
+    columnId: string,
+    patch: Partial<TableColumnConfig>,
+  ) {
+    const previousColumn = selectedTable.columns.find(
+      (column) => column.id === columnId,
+    );
+
+    updateSelectedTable((current) => ({
+      ...current,
+      templateName: undefined,
+      columns: current.columns.map((column) =>
+        column.id === columnId ? { ...column, ...patch } : column,
+      ),
+    }));
+
+    if (patch.name !== undefined && previousColumn?.name) {
+      setMapping((current) => {
+        const next = { ...current };
+        const previousHeader = next[previousColumn.name];
+        delete next[previousColumn.name];
+        if (patch.name && previousHeader) {
+          next[patch.name] = previousHeader;
+        }
+        return next;
+      });
+    }
+
+    setSqlResult(null);
+    setApiError(null);
+  }
+
+  function handleAddColumn() {
+    updateSelectedTable((current) => ({
+      ...current,
+      templateName: undefined,
+      columns: [...current.columns, createTableColumn()],
+    }));
+    setSqlResult(null);
+  }
+
+  function handleRemoveColumn(columnId: string) {
+    const column = selectedTable.columns.find((item) => item.id === columnId);
+    updateSelectedTable((current) => ({
+      ...current,
+      templateName: undefined,
+      columns: current.columns.filter((item) => item.id !== columnId),
+    }));
+    if (column?.name) {
+      setMapping((current) => {
+        const next = { ...current };
+        delete next[column.name];
+        return next;
+      });
+    }
+    setSqlResult(null);
   }
 
   function handleMappingChange(fieldName: string, headerName: string) {
     setMapping((current) => {
       const next = { ...current };
       if (headerName) {
+        for (const [mappedField, mappedHeader] of Object.entries(next)) {
+          if (mappedField !== fieldName && mappedHeader === headerName) {
+            delete next[mappedField];
+          }
+        }
         next[fieldName] = headerName;
       } else {
         delete next[fieldName];
@@ -205,12 +410,17 @@ function App() {
   }
 
   function applyAutoMapping() {
-    setMapping(buildAutoMapping(selectedEntity?.fields || [], headers));
+    setMapping(
+      makeUniqueMapping(
+        buildAutoMapping(selectedTable.columns, headers),
+        selectedTable.columns,
+      ),
+    );
     setSqlResult(null);
   }
 
   async function handleGenerateSql() {
-    if (!uploadResult || !selectedEntity || !canGenerate) {
+    if (!uploadResult || !canGenerate) {
       return;
     }
 
@@ -222,8 +432,8 @@ function App() {
       const result = await generateSql({
         workbookId: uploadResult.workbookId,
         sheetName: selectedSheetName,
-        entity: selectedEntity.name,
-        mapping,
+        table: buildGenerateTable(selectedTable),
+        mapping: buildGenerateMapping(selectedTable.columns, mapping),
       });
       setSqlResult(result);
       addHistoryItem(result);
@@ -254,7 +464,7 @@ function App() {
       .replace(/^-|-$/g, "")
       .toLowerCase();
     downloadTextFile(
-      `${selectedEntityName}-${safeSheet || "script"}.sql`,
+      `${toSafeFilename(selectedTable.name)}-${safeSheet || "script"}.sql`,
       sqlResult.sql,
     );
   }
@@ -285,16 +495,12 @@ function App() {
   }
 
   function addHistoryItem(result: GenerateSqlResult) {
-    if (!selectedEntity) {
-      return;
-    }
-
     const nextItem: ImportHistoryItem = {
       id: createHistoryId(),
       createdAt: new Date().toISOString(),
       fileName: selectedFile?.name || "planilha.xlsx",
-      entity: selectedEntity.name,
-      entityLabel: selectedEntity.label,
+      entity: selectedTable.name,
+      entityLabel: selectedTable.name,
       table: result.summary.table,
       sheetName: result.summary.sheetName,
       insertedRows: result.summary.insertedRows,
@@ -310,38 +516,17 @@ function App() {
     });
   }
 
-  const steps: Array<{ label: string; status: StepStatus }> = [
-    {
-      label: "Catalogo",
-      status: selectedEntity ? "done" : "active",
-    },
-    {
-      label: "Upload",
-      status: uploadResult ? "done" : selectedEntity ? "active" : "ready",
-    },
-    {
-      label: "Mapeamento",
-      status:
-        uploadResult && requiredMissing.length === 0 && mappedFieldsCount > 0
-          ? "done"
-          : uploadResult
-            ? "active"
-            : "ready",
-    },
-    {
-      label: "SQL",
-      status: sqlResult ? "done" : canGenerate ? "active" : "ready",
-    },
-  ];
-
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <Sidebar
-        steps={steps}
         usingFallbackCatalog={usingFallbackCatalog}
         activeView={activeView}
         historyCount={historyItems.length}
+        tablesCount={tables.length}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
         onOpenImport={() => setActiveView("import")}
+        onOpenTables={() => setActiveView("tables")}
         onOpenHistory={() => setActiveView("history")}
       />
 
@@ -349,12 +534,18 @@ function App() {
         <header className="topbar">
           <div>
             <span className="eyebrow">
-              {activeView === "history" ? "Auditoria local" : "Gerador revisavel"}
+              {activeView === "history"
+                ? "Auditoria local"
+                : activeView === "tables"
+                  ? "Catálogo do front"
+                  : "Gerador revisável"}
             </span>
             <h1>
               {activeView === "history"
-                ? "Historico de importacoes"
-                : "Excel para SQL com validacao de catalogo"}
+                ? "Histórico de importações"
+                : activeView === "tables"
+                  ? "Tabelas configuradas para importação"
+                  : "Excel para SQL com validação de catálogo"}
             </h1>
           </div>
           <div className="topbar-actions">
@@ -363,8 +554,8 @@ function App() {
               className="icon-button"
               type="button"
               onClick={loadCatalog}
-              aria-label="Atualizar catalogo"
-              title="Atualizar catalogo"
+              aria-label="Atualizar catálogo"
+              title="Atualizar catálogo"
             >
               {catalogLoading ? (
                 <Loader2 className="spin" size={18} />
@@ -380,9 +571,9 @@ function App() {
             <section className="metrics-grid" aria-label="Resumo">
               <MetricCard
                 icon={<Database size={20} />}
-                label="Entidade"
-                value={selectedEntity?.label || "Catalogo"}
-                meta={selectedEntity?.table || "Aguardando"}
+                label="Tabela"
+                value={selectedTable.name || "Sem nome"}
+                meta={`${selectedTable.columns.length} colunas`}
               />
               <MetricCard
                 icon={<Table2 size={20} />}
@@ -393,8 +584,8 @@ function App() {
               <MetricCard
                 icon={<Settings2 size={20} />}
                 label="Mapeados"
-                value={`${mappedFieldsCount}/${selectedEntity?.fields.length || 0}`}
-                meta={`${requiredMissing.length} obrigatorios pendentes`}
+                value={`${mappedFieldsCount}/${selectedTable.columns.length}`}
+                meta={`${requiredMissing.length} obrigatórios pendentes`}
               />
               <MetricCard
                 icon={<Braces size={20} />}
@@ -410,11 +601,11 @@ function App() {
 
             <div className="main-grid">
               <RequestExcel
-                selectedEntityName={selectedEntityName}
-                selectedEntity={selectedEntity}
+                tables={tables}
+                selectedTableId={selectedTable.id}
+                selectedTable={selectedTable}
+                tableIssue={tableIssue}
                 selectedFile={selectedFile}
-                catalog={catalog}
-                catalogLoading={catalogLoading}
                 uploadResult={uploadResult}
                 selectedSheetName={selectedSheetName}
                 headers={headers}
@@ -423,7 +614,7 @@ function App() {
                 isUploading={isUploading}
                 isLoadingSheet={isLoadingSheet}
                 isGenerating={isGenerating}
-                onEntityChange={handleEntityChange}
+                onConfiguredTableChange={handleConfiguredTableChange}
                 onFileSelected={handleFile}
                 onSheetSelect={selectSheet}
                 onAutoMap={applyAutoMapping}
@@ -437,6 +628,32 @@ function App() {
               handleDownloadSql={handleDownloadSql}
               sqlResult={sqlResult}
               copied={copied}
+            />
+          </>
+        ) : activeView === "tables" ? (
+          <>
+            {(catalogError || apiError) && (
+              <StatusPanel catalogMessage={catalogError} apiError={apiError} />
+            )}
+
+            <TableConfigPanel
+              tables={tables}
+              selectedTable={selectedTable}
+              selectedTableId={selectedTable.id}
+              tableIssue={tableIssue}
+              catalog={catalog}
+              catalogLoading={catalogLoading}
+              fieldTypes={fieldTypes}
+              onSelectTable={handleSelectTable}
+              onAddTable={handleAddTable}
+              onSaveTables={handleSaveTables}
+              tablesSaved={tablesSaved}
+              onRemoveTable={handleRemoveTable}
+              onApplyTemplate={handleApplyTemplate}
+              onTableNameChange={handleTableNameChange}
+              onColumnChange={handleColumnChange}
+              onAddColumn={handleAddColumn}
+              onRemoveColumn={handleRemoveColumn}
             />
           </>
         ) : (
@@ -467,6 +684,200 @@ function toApiErrorShape(error: unknown, fallback: string): ApiErrorShape {
   return {
     message: fallback,
   };
+}
+
+function createDefaultTableConfig(): TableConfig {
+  return {
+    name: "users",
+    columns: [
+      createTableColumn({
+        name: "name",
+        label: "Nome",
+        required: true,
+        type: "string",
+        maxLength: "120",
+      }),
+      createTableColumn({
+        name: "email",
+        label: "Email",
+        required: true,
+        unique: true,
+        type: "email",
+        maxLength: "254",
+      }),
+      createTableColumn({
+        name: "cpf",
+        label: "CPF",
+        required: true,
+        unique: true,
+        type: "cpf",
+      }),
+    ],
+  };
+}
+
+function createBlankTableConfig(): TableConfig {
+  return {
+    name: "new_table",
+    columns: [
+      createTableColumn({
+        name: "name",
+        label: "Nome",
+        required: true,
+        type: "string",
+      }),
+    ],
+  };
+}
+
+function createConfiguredTable(tableConfig: TableConfig): ConfiguredTable {
+  return {
+    ...tableConfig,
+    id: createHistoryId(),
+  };
+}
+
+function createTableConfigFromEntity(entity: CatalogEntity): TableConfig {
+  return {
+    name: entity.table || entity.name,
+    columns: entity.fields.map((field) =>
+      createTableColumn({
+        name: field.sqlColumn || field.name,
+        label: field.label,
+        required: field.required,
+        unique: field.unique,
+        type: field.type,
+        maxLength: field.maxLength ? String(field.maxLength) : "",
+      }),
+    ),
+  };
+}
+
+function createTableColumn(
+  overrides: Partial<TableColumnConfig> = {},
+): TableColumnConfig {
+  return {
+    id: createHistoryId(),
+    name: "",
+    label: "",
+    required: false,
+    unique: false,
+    type: "string",
+    maxLength: "",
+    ...overrides,
+  };
+}
+
+function getTableConfigIssue(tableConfig: TableConfig): string {
+  const tableName = tableConfig.name.trim();
+  if (!tableName) {
+    return "Informe o nome da tabela.";
+  }
+
+  if (!isSafeTableName(tableName)) {
+    return "Use um nome de tabela seguro, como users ou public.users.";
+  }
+
+  const columnNames = tableConfig.columns
+    .map((column) => column.name.trim())
+    .filter(Boolean);
+
+  if (!columnNames.length) {
+    return "Adicione ao menos uma coluna.";
+  }
+
+  const duplicateColumn = columnNames.find(
+    (columnName, index) => columnNames.indexOf(columnName) !== index,
+  );
+  if (duplicateColumn) {
+    return `A coluna ${duplicateColumn} está duplicada.`;
+  }
+
+  const invalidColumn = columnNames.find((columnName) => !isSafeIdentifier(columnName));
+  if (invalidColumn) {
+    return `A coluna ${invalidColumn} precisa usar um identificador seguro.`;
+  }
+
+  const invalidMaxLength = tableConfig.columns.find(
+    (column) =>
+      column.maxLength.trim() &&
+      (!Number.isInteger(Number(column.maxLength)) || Number(column.maxLength) < 1),
+  );
+  if (invalidMaxLength) {
+    return `O tamanho máximo de ${invalidMaxLength.name || "uma coluna"} precisa ser positivo.`;
+  }
+
+  return "";
+}
+
+function buildGenerateTable(tableConfig: TableConfig) {
+  return {
+    name: tableConfig.name.trim(),
+    columns: tableConfig.columns
+      .filter((column) => column.name.trim())
+      .map<GenerateTableColumn>((column) => {
+        const maxLength = Number(column.maxLength);
+        return {
+          name: column.name.trim(),
+          label: column.label.trim() || column.name.trim(),
+          required: column.required,
+          type: column.type,
+          unique: column.unique,
+          ...(Number.isInteger(maxLength) && maxLength > 0 ? { maxLength } : {}),
+        };
+      }),
+  };
+}
+
+function buildGenerateMapping(
+  columns: TableColumnConfig[],
+  mapping: Record<string, string>,
+): Record<string, string> {
+  return columns.reduce<Record<string, string>>((nextMapping, column) => {
+    const fieldName = column.name.trim();
+    if (fieldName && mapping[fieldName]) {
+      nextMapping[fieldName] = mapping[fieldName];
+    }
+    return nextMapping;
+  }, {});
+}
+
+function makeUniqueMapping(
+  mapping: Record<string, string>,
+  columns: TableColumnConfig[],
+): Record<string, string> {
+  const usedHeaders = new Set<string>();
+
+  return columns.reduce<Record<string, string>>((nextMapping, column) => {
+    const fieldName = column.name.trim();
+    const headerName = mapping[fieldName];
+    if (fieldName && headerName && !usedHeaders.has(headerName)) {
+      nextMapping[fieldName] = headerName;
+      usedHeaders.add(headerName);
+    }
+    return nextMapping;
+  }, {});
+}
+
+function isSafeTableName(value: string): boolean {
+  const parts = value.split(".");
+  return (
+    parts.length <= 2 &&
+    parts.every((part) => part.length > 0 && isSafeIdentifier(part))
+  );
+}
+
+function isSafeIdentifier(value: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+}
+
+function toSafeFilename(value: string): string {
+  return (
+    value
+      .replace(/[^\w-]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .toLowerCase() || "script"
+  );
 }
 
 export default App;

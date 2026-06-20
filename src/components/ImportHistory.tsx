@@ -37,8 +37,8 @@ export default function ImportHistory({
       <section className="panel history-empty-panel">
         <div className="empty-state history-empty">
           <FileSpreadsheet size={28} />
-          <strong>Nenhuma importacao registrada</strong>
-          <span>Os scripts gerados vao aparecer aqui automaticamente.</span>
+          <strong>Nenhuma importação registrada</strong>
+          <span>Os scripts gerados vão aparecer aqui automaticamente.</span>
         </div>
       </section>
     );
@@ -49,8 +49,8 @@ export default function ImportHistory({
       <div className="panel history-list-panel">
         <div className="panel-heading inline">
           <div>
-            <span className="panel-kicker">Historico</span>
-            <h2>Importacoes</h2>
+            <span className="panel-kicker">Histórico</span>
+            <h2>Importações</h2>
           </div>
           <button
             className="icon-text-button danger"

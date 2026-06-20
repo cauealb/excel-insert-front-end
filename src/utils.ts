@@ -1,4 +1,8 @@
-import type { CatalogField } from "./types";
+import type { CatalogField, TableColumnConfig } from "./types";
+
+type MappingField = Pick<CatalogField, "name" | "label" | "required"> &
+  Partial<Pick<CatalogField, "sqlColumn">> &
+  Partial<Pick<TableColumnConfig, "maxLength">>;
 
 const aliases: Record<string, string[]> = {
   external_id: ["id externo", "external id", "codigo", "codigo externo"],
@@ -22,7 +26,7 @@ export function normalizeText(value: string): string {
 }
 
 export function buildAutoMapping(
-  fields: CatalogField[],
+  fields: MappingField[],
   headers: string[],
 ): Record<string, string> {
   const normalizedHeaders = headers.map((header) => ({
@@ -34,7 +38,7 @@ export function buildAutoMapping(
     const candidates = [
       field.name,
       field.label,
-      field.sqlColumn,
+      field.sqlColumn || field.name,
       ...(aliases[field.name] || []),
     ].map(normalizeText);
 
@@ -62,9 +66,9 @@ export function buildAutoMapping(
 }
 
 export function getRequiredMissing(
-  fields: CatalogField[],
+  fields: MappingField[],
   mapping: Record<string, string>,
-): CatalogField[] {
+): MappingField[] {
   return fields.filter((field) => field.required && !mapping[field.name]);
 }
 

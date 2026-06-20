@@ -2,6 +2,8 @@ import type {
   ApiErrorShape,
   CatalogEntity,
   CatalogField,
+  CatalogResult,
+  FieldType,
   GenerateSqlPayload,
   GenerateSqlResult,
   SheetDetails,
@@ -12,6 +14,15 @@ import type {
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ||
   "http://localhost:3333";
+
+const fallbackFieldTypes: FieldType[] = [
+  "string",
+  "email",
+  "cpf",
+  "boolean",
+  "date",
+  "number",
+];
 
 const fallbackCatalog: CatalogEntity[] = [
   {
@@ -74,6 +85,14 @@ const fallbackCatalog: CatalogEntity[] = [
         required: false,
         unique: false,
         type: "boolean",
+      },
+      {
+        name: "age",
+        label: "Idade",
+        sqlColumn: "age",
+        required: false,
+        unique: false,
+        type: "number",
       },
     ],
   },
@@ -158,21 +177,21 @@ function parseErrorPayload(data: unknown): ApiErrorShape {
   };
 }
 
-export async function getCatalog(): Promise<{
-  entities: CatalogEntity[];
-  usingFallback: boolean;
-}> {
+export async function getCatalog(): Promise<CatalogResult> {
   try {
     const data = await request<unknown>("/api/catalog");
     const entities = normalizeCatalog(data);
+    const fieldTypes = normalizeFieldTypes(data);
 
     return {
-      entities: entities.length ? entities : fallbackCatalog,
-      usingFallback: entities.length === 0,
+      entities,
+      fieldTypes: fieldTypes.length ? fieldTypes : fallbackFieldTypes,
+      usingFallback: false,
     };
   } catch {
     return {
       entities: fallbackCatalog,
+      fieldTypes: fallbackFieldTypes,
       usingFallback: true,
     };
   }
@@ -222,6 +241,16 @@ function normalizeCatalog(data: unknown): CatalogEntity[] {
   return rawEntities
     .map((rawEntity) => normalizeEntity(rawEntity))
     .filter((entity): entity is CatalogEntity => Boolean(entity));
+}
+
+function normalizeFieldTypes(data: unknown): FieldType[] {
+  if (!isRecord(data) || !Array.isArray(data.fieldTypes)) {
+    return [];
+  }
+
+  return data.fieldTypes
+    .map((fieldType) => readString(fieldType))
+    .filter((fieldType) => fieldType.length > 0);
 }
 
 function extractEntities(data: unknown): unknown[] {
@@ -312,6 +341,7 @@ function normalizeField(rawField: unknown): CatalogField | null {
     required: readBoolean(rawField.required) || readBoolean(rawField.mandatory),
     unique: readBoolean(rawField.unique),
     type: readString(rawField.type) || "string",
+    maxLength: readNumber(rawField.maxLength),
   };
 }
 
@@ -393,10 +423,13 @@ function normalizeSheetDetails(
     };
   }
 
+  const rawSheet = isRecord(data.sheet) ? data.sheet : data;
+
   return {
     workbookId: readString(data.workbookId) || workbookId,
-    sheetName: readString(data.sheetName) || readString(data.name) || sheetName,
-    headers: normalizeHeaders(data.headers),
+    sheetName:
+      readString(rawSheet.sheetName) || readString(rawSheet.name) || sheetName,
+    headers: normalizeHeaders(rawSheet.headers),
   };
 }
 

@@ -1,4 +1,11 @@
-export type FieldType = "string" | "email" | "cpf" | "date" | "boolean" | string;
+export type FieldType =
+  | "string"
+  | "email"
+  | "cpf"
+  | "date"
+  | "boolean"
+  | "number"
+  | string;
 
 export interface CatalogField {
   name: string;
@@ -7,6 +14,7 @@ export interface CatalogField {
   required: boolean;
   unique: boolean;
   type: FieldType;
+  maxLength?: number;
 }
 
 export interface CatalogEntity {
@@ -14,6 +22,46 @@ export interface CatalogEntity {
   label: string;
   table: string;
   fields: CatalogField[];
+}
+
+export interface CatalogResult {
+  entities: CatalogEntity[];
+  fieldTypes: FieldType[];
+  usingFallback: boolean;
+}
+
+export interface TableColumnConfig {
+  id: string;
+  name: string;
+  label: string;
+  required: boolean;
+  unique: boolean;
+  type: FieldType;
+  maxLength: string;
+}
+
+export interface TableConfig {
+  name: string;
+  columns: TableColumnConfig[];
+}
+
+export interface ConfiguredTable extends TableConfig {
+  id: string;
+  templateName?: string;
+}
+
+export interface GenerateTableColumn {
+  name: string;
+  label?: string;
+  required?: boolean;
+  type?: FieldType;
+  unique?: boolean;
+  maxLength?: number;
+}
+
+export interface GenerateTable {
+  name: string;
+  columns: GenerateTableColumn[];
 }
 
 export interface UploadSheet {
@@ -36,7 +84,7 @@ export interface SheetDetails {
 export interface GenerateSqlPayload {
   workbookId: string;
   sheetName: string;
-  entity: string;
+  table: GenerateTable;
   mapping: Record<string, string>;
 }
 
