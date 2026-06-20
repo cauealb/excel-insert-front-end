@@ -1,4 +1,12 @@
-import { Braces, Database, Loader2, RefreshCw, Settings2, Table2 } from "lucide-react";
+import {
+  Braces,
+  Database,
+  Loader2,
+  MoreVertical,
+  RefreshCw,
+  Settings2,
+  Table2,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   ApiError,
@@ -73,6 +81,7 @@ function App() {
   const [copied, setCopied] = useState(false);
   const [tablesSaved, setTablesSaved] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => {
     const savedTheme = localStorage.getItem("excel-insert-theme");
     if (savedTheme === "dark" || savedTheme === "light") {
@@ -125,6 +134,29 @@ function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("excel-insert-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    document.body.classList.toggle("mobile-sidebar-lock", mobileSidebarOpen);
+
+    return () => {
+      document.body.classList.remove("mobile-sidebar-lock");
+    };
+  }, [mobileSidebarOpen]);
+
+  useEffect(() => {
+    if (!mobileSidebarOpen) {
+      return;
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMobileSidebarOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [mobileSidebarOpen]);
 
   async function loadCatalog() {
     setCatalogLoading(true);
@@ -215,6 +247,11 @@ function App() {
 
   function toggleTheme() {
     setTheme((currentTheme) => (currentTheme === "light" ? "dark" : "light"));
+  }
+
+  function openView(view: ActiveView) {
+    setActiveView(view);
+    setMobileSidebarOpen(false);
   }
 
   function updateSelectedTable(
@@ -517,7 +554,11 @@ function App() {
   }
 
   return (
-    <main className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+    <main
+      className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${
+        mobileSidebarOpen ? "mobile-sidebar-open" : ""
+      }`}
+    >
       <Sidebar
         usingFallbackCatalog={usingFallbackCatalog}
         activeView={activeView}
@@ -525,9 +566,16 @@ function App() {
         tablesCount={tables.length}
         collapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
-        onOpenImport={() => setActiveView("import")}
-        onOpenTables={() => setActiveView("tables")}
-        onOpenHistory={() => setActiveView("history")}
+        onCloseMobile={() => setMobileSidebarOpen(false)}
+        onOpenImport={() => openView("import")}
+        onOpenTables={() => openView("tables")}
+        onOpenHistory={() => openView("history")}
+      />
+      <button
+        className="sidebar-backdrop"
+        type="button"
+        aria-label="Fechar menu lateral"
+        onClick={() => setMobileSidebarOpen(false)}
       />
 
       <section className="workspace">
@@ -549,6 +597,16 @@ function App() {
             </h1>
           </div>
           <div className="topbar-actions">
+            <button
+              className="icon-button mobile-menu-button"
+              type="button"
+              onClick={() => setMobileSidebarOpen(true)}
+              aria-label="Abrir menu lateral"
+              aria-expanded={mobileSidebarOpen}
+              title="Abrir menu"
+            >
+              <MoreVertical size={18} />
+            </button>
             <ThemeToggle theme={theme} onToggle={toggleTheme} />
             <button
               className="icon-button"

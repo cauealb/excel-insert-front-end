@@ -4,6 +4,7 @@ import {
   Clock3,
   FileSpreadsheet,
   Table2,
+  X,
 } from "lucide-react";
 import ApiCard from "./ApiCard";
 
@@ -14,6 +15,7 @@ interface SidebarProps {
   tablesCount: number;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  onCloseMobile: () => void;
   onOpenImport: () => void;
   onOpenTables: () => void;
   onOpenHistory: () => void;
@@ -26,6 +28,7 @@ export default function Sidebar({
   tablesCount,
   collapsed,
   onToggleCollapsed,
+  onCloseMobile,
   onOpenImport,
   onOpenTables,
   onOpenHistory,
@@ -67,13 +70,22 @@ export default function Sidebar({
           </div>
         </div>
         <button
-          className="sidebar-toggle"
+          className="sidebar-toggle sidebar-toggle-desktop"
           type="button"
           onClick={onToggleCollapsed}
           aria-label={collapsed ? "Abrir menu lateral" : "Fechar menu lateral"}
           title={collapsed ? "Abrir menu" : "Fechar menu"}
         >
           {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
+        </button>
+        <button
+          className="sidebar-toggle sidebar-close-button"
+          type="button"
+          onClick={onCloseMobile}
+          aria-label="Fechar menu lateral"
+          title="Fechar menu"
+        >
+          <X size={18} />
         </button>
       </div>
 
